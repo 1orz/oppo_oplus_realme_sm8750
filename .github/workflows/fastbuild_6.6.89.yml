@@ -229,7 +229,8 @@ jobs:
             ccache -sv
           fi
 
-      - name: 添加KernelSU
+      - name: 添加KernelSU (已禁用-排查Docker)
+        if: false
         id: ksu_version
         run: |
           # 进入内核工作目录
@@ -327,8 +328,8 @@ jobs:
             echo "已选择无内置KernelSU模式，跳过KernelSU配置..."
           fi
 
-      - name: 应用 KernelSU & SUSFS 补丁
-        if: inputs.susfs_enable
+      - name: 应用 KernelSU & SUSFS 补丁 (已禁用-排查Docker)
+        if: false
         run: |
           cd kernel_workspace
           if [[ ${{ github.event.inputs.ksu_type }} != "none" ]]; then
@@ -380,8 +381,8 @@ jobs:
           cp ../SukiSU_patch/other/zram/zram_patch/${{ env.KERNEL_VERSION }}/lz4kd.patch ./
           patch -p1 -F 3 < lz4kd.patch || true
           
-      - name: 添加SUSFS 配置项
-        if: inputs.susfs_enable
+      - name: 添加SUSFS 配置项 (已禁用-排查Docker)
+        if: false
         run: |
           cd kernel_workspace
           echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -400,16 +401,9 @@ jobs:
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> ./common/arch/arm64/configs/gki_defconfig
           
-      - name: 添加 KSU & 其他配置项
+      - name: 添加基础配置项 (KSU已禁用-排查Docker)
         run: |
           cd kernel_workspace
-          echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
-          if [[ ${{ github.event.inputs.kpm_enable }} == 'builtin' && ( "${{ github.event.inputs.ksu_type }}" == "sukisu" || "${{ github.event.inputs.ksu_type }}" == "resukisu" ) ]]; then
-            echo "CONFIG_KPM=y" >> ./common/arch/arm64/configs/gki_defconfig
-          fi
-          if [[ "${{ github.event.inputs.susfs_enable }}" == "false" ]]; then
-            echo "CONFIG_KSU_SUSFS=n" >> ./common/arch/arm64/configs/gki_defconfig
-          fi
           #添加对 Mountify (backslashxx/mountify) 模块的支持
           echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -427,8 +421,8 @@ jobs:
           #跳过将uapi标准头安装到 usr/include 目录的不必要操作，节省编译时间
           echo "CONFIG_HEADERS_INSTALL=n" >> ./common/arch/arm64/configs/gki_defconfig
           
-      - name: 启用网络功能增强优化配置
-        if: inputs.better_net
+      - name: 启用网络功能增强优化配置 (已禁用-排查Docker)
+        if: false
         run: |
           cd kernel_workspace
           #启用  BPF 流解析器,实现高性能网络流量处理,增强网络监控和分析能力
@@ -469,67 +463,20 @@ jobs:
           cd kernel_workspace
           DEFCONFIG=./common/arch/arm64/configs/gki_defconfig
 
-          #=== 命名空间 - 容器进程/网络/用户隔离的基础 ===
-          echo "CONFIG_NAMESPACES=y" >> $DEFCONFIG
+          #=== Generally Necessary: 仅补充 check-config.sh 检测缺失的必须项 ===
+          #命名空间 (PID_NS和IPC_NS在当前内核中缺失)
           echo "CONFIG_PID_NS=y" >> $DEFCONFIG
           echo "CONFIG_IPC_NS=y" >> $DEFCONFIG
-          echo "CONFIG_UTS_NS=y" >> $DEFCONFIG
-          echo "CONFIG_NET_NS=y" >> $DEFCONFIG
-          echo "CONFIG_USER_NS=y" >> $DEFCONFIG
-          echo "CONFIG_POSIX_MQUEUE=y" >> $DEFCONFIG
-
-          #=== Cgroups - 容器资源隔离与限制 ===
+          #Cgroups (CGROUP_DEVICE和CGROUP_PIDS缺失)
           echo "CONFIG_CGROUP_DEVICE=y" >> $DEFCONFIG
           echo "CONFIG_CGROUP_PIDS=y" >> $DEFCONFIG
-          #CONFIG_CGROUP_HUGETLB 移动端SoC通常不支持HugeTLB,暂不开启
-          echo "CONFIG_CGROUP_PERF=y" >> $DEFCONFIG
-          echo "CONFIG_NET_CLS_CGROUP=y" >> $DEFCONFIG
-          #CONFIG_CFS_BANDWIDTH 与风驰hmbird自定义调度器可能冲突,暂不开启
-          echo "CONFIG_CPUSETS=y" >> $DEFCONFIG
-          echo "CONFIG_PROC_PID_CPUSET=y" >> $DEFCONFIG
-
-          #=== 网络 - Docker桥接/NAT/VETH等容器网络核心 ===
-          echo "CONFIG_VETH=y" >> $DEFCONFIG
-          echo "CONFIG_BRIDGE=y" >> $DEFCONFIG
+          #网络 (BRIDGE_NETFILTER缺失,VETH/BRIDGE等已有)
           echo "CONFIG_BRIDGE_NETFILTER=y" >> $DEFCONFIG
-          echo "CONFIG_MACVLAN=y" >> $DEFCONFIG
-          echo "CONFIG_IPVLAN=y" >> $DEFCONFIG
-          echo "CONFIG_VXLAN=y" >> $DEFCONFIG
-          echo "CONFIG_BRIDGE_VLAN_FILTERING=y" >> $DEFCONFIG
-          echo "CONFIG_NETFILTER_XT_MATCH_IPVS=y" >> $DEFCONFIG
-          echo "CONFIG_IP_NF_NAT=y" >> $DEFCONFIG
-          echo "CONFIG_IP_NF_TARGET_MASQUERADE=y" >> $DEFCONFIG
-          echo "CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y" >> $DEFCONFIG
-          #IPVS - Docker Swarm/负载均衡
-          echo "CONFIG_IP_VS=y" >> $DEFCONFIG
-          echo "CONFIG_IP_VS_PROTO_TCP=y" >> $DEFCONFIG
-          echo "CONFIG_IP_VS_PROTO_UDP=y" >> $DEFCONFIG
-          echo "CONFIG_IP_VS_RR=y" >> $DEFCONFIG
-          echo "CONFIG_IP_VS_NFCT=y" >> $DEFCONFIG
-          echo "CONFIG_IP_SCTP=y" >> $DEFCONFIG
+          #POSIX消息队列
+          echo "CONFIG_POSIX_MQUEUE=y" >> $DEFCONFIG
 
-          #=== nftables - 新一代包过滤框架,Docker新版本依赖 ===
-          echo "CONFIG_NF_TABLES=y" >> $DEFCONFIG
-          echo "CONFIG_NFT_NAT=y" >> $DEFCONFIG
-          echo "CONFIG_NFT_MASQ=y" >> $DEFCONFIG
-          echo "CONFIG_NFT_CT=y" >> $DEFCONFIG
-          echo "CONFIG_NFT_FIB=y" >> $DEFCONFIG
-          echo "CONFIG_NFT_FIB_IPV4=y" >> $DEFCONFIG
-          echo "CONFIG_NFT_FIB_IPV6=y" >> $DEFCONFIG
-
-          #=== 存储驱动 - Docker默认使用OverlayFS ===
-          echo "CONFIG_OVERLAY_FS=y" >> $DEFCONFIG
-          #Btrfs (可选存储驱动)
-          echo "CONFIG_BTRFS_FS=y" >> $DEFCONFIG
-          echo "CONFIG_BTRFS_FS_POSIX_ACL=y" >> $DEFCONFIG
-
-          #CONFIG_SECURITY_APPARMOR 与Android的SELinux LSM栈冲突,不开启
-
-          #=== 其他容器运行必要特性 ===
-          echo "CONFIG_CHECKPOINT_RESTORE=y" >> $DEFCONFIG
-          echo "CONFIG_FHANDLE=y" >> $DEFCONFIG
-
-      - name: 添加 BBR 等一系列拥塞控制算法
+      - name: 添加 BBR 等一系列拥塞控制算法 (已禁用-排查Docker)
+        if: false
         run: |
           if [[ "${{ github.event.inputs.bbr_enable }}" != "false" ]]; then
             echo "正在添加BBR等拥塞控制算法..."
@@ -569,16 +516,16 @@ jobs:
             fi
           fi
 
-      - name: 启用ADIOS IO调度器
-        if: inputs.adios_enable
+      - name: 启用ADIOS IO调度器 (已禁用-排查Docker)
+        if: false
         run: |
           echo "正在启用ADIOS IO调度器(将截止时间优先调度算法与基于自主学习的自适应延迟控制算法相结合, 降低I/O延迟)…"
           cd kernel_workspace
           echo "CONFIG_MQ_IOSCHED_ADIOS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_MQ_IOSCHED_DEFAULT_ADIOS=y" >> ./common/arch/arm64/configs/gki_defconfig
 
-      - name: 启用Re-Kernel支持
-        if: inputs.rekernel_enable
+      - name: 启用Re-Kernel支持 (已禁用-排查Docker)
+        if: false
         run: |
           echo "正在启用Re-Kernel支持(用于与Freezer,NoActive等软件配合使用,提升冻结后台能力)…"
           cd kernel_workspace
@@ -704,7 +651,8 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ env.CCACHE_KEY }}-${{ runner.os }}-${{ github.ref_name }}
          
-      - name: 应用KPM并修补内核
+      - name: 应用KPM并修补内核 (已禁用-排查Docker)
+        if: false
         run: |
           if [[ ${{ github.event.inputs.kpm_enable }} == 'builtin' && ( "${{ github.event.inputs.ksu_type }}" == "sukisu" || "${{ github.event.inputs.ksu_type }}" == "resukisu" ) ]]; then
             echo "正在应用KPM并修补内核..."
