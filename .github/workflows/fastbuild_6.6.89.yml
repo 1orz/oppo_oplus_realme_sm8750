@@ -481,10 +481,10 @@ jobs:
           #=== Cgroups - 容器资源隔离与限制 ===
           echo "CONFIG_CGROUP_DEVICE=y" >> $DEFCONFIG
           echo "CONFIG_CGROUP_PIDS=y" >> $DEFCONFIG
-          echo "CONFIG_CGROUP_HUGETLB=y" >> $DEFCONFIG
+          #CONFIG_CGROUP_HUGETLB 移动端SoC通常不支持HugeTLB,暂不开启
           echo "CONFIG_CGROUP_PERF=y" >> $DEFCONFIG
           echo "CONFIG_NET_CLS_CGROUP=y" >> $DEFCONFIG
-          echo "CONFIG_CFS_BANDWIDTH=y" >> $DEFCONFIG
+          #CONFIG_CFS_BANDWIDTH 与风驰hmbird自定义调度器可能冲突,暂不开启
           echo "CONFIG_CPUSETS=y" >> $DEFCONFIG
           echo "CONFIG_PROC_PID_CPUSET=y" >> $DEFCONFIG
 
@@ -523,8 +523,7 @@ jobs:
           echo "CONFIG_BTRFS_FS=y" >> $DEFCONFIG
           echo "CONFIG_BTRFS_FS_POSIX_ACL=y" >> $DEFCONFIG
 
-          #=== 安全模块 ===
-          echo "CONFIG_SECURITY_APPARMOR=y" >> $DEFCONFIG
+          #CONFIG_SECURITY_APPARMOR 与Android的SELinux LSM栈冲突,不开启
 
           #=== 其他容器运行必要特性 ===
           echo "CONFIG_CHECKPOINT_RESTORE=y" >> $DEFCONFIG

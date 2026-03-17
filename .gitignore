@@ -1,1 +1,3 @@
-boot.img
+boot*.img
+.gitignore
+Image
