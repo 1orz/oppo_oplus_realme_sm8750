@@ -60,6 +60,11 @@ on:
         required: true
         type: boolean
         default: 'false'
+      docker_enable:
+        description: '是否启用Docker/LXC容器支持(开启容器运行所需的命名空间、cgroup、网络及存储驱动等内核特性)'
+        required: true
+        type: boolean
+        default: 'false'
       adios_enable:
         description: '是否启用ADIOS IO调度器支持(提升IO读写性能)'
         required: true
@@ -458,6 +463,73 @@ jobs:
           wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/other_patch/config.patch
           patch -p1 -F 3 < config.patch || true
 
+      - name: 启用Docker/LXC容器支持
+        if: inputs.docker_enable
+        run: |
+          cd kernel_workspace
+          DEFCONFIG=./common/arch/arm64/configs/gki_defconfig
+
+          #=== 命名空间 - 容器进程/网络/用户隔离的基础 ===
+          echo "CONFIG_NAMESPACES=y" >> $DEFCONFIG
+          echo "CONFIG_PID_NS=y" >> $DEFCONFIG
+          echo "CONFIG_IPC_NS=y" >> $DEFCONFIG
+          echo "CONFIG_UTS_NS=y" >> $DEFCONFIG
+          echo "CONFIG_NET_NS=y" >> $DEFCONFIG
+          echo "CONFIG_USER_NS=y" >> $DEFCONFIG
+          echo "CONFIG_POSIX_MQUEUE=y" >> $DEFCONFIG
+
+          #=== Cgroups - 容器资源隔离与限制 ===
+          echo "CONFIG_CGROUP_DEVICE=y" >> $DEFCONFIG
+          echo "CONFIG_CGROUP_PIDS=y" >> $DEFCONFIG
+          echo "CONFIG_CGROUP_HUGETLB=y" >> $DEFCONFIG
+          echo "CONFIG_CGROUP_PERF=y" >> $DEFCONFIG
+          echo "CONFIG_NET_CLS_CGROUP=y" >> $DEFCONFIG
+          echo "CONFIG_CFS_BANDWIDTH=y" >> $DEFCONFIG
+          echo "CONFIG_CPUSETS=y" >> $DEFCONFIG
+          echo "CONFIG_PROC_PID_CPUSET=y" >> $DEFCONFIG
+
+          #=== 网络 - Docker桥接/NAT/VETH等容器网络核心 ===
+          echo "CONFIG_VETH=y" >> $DEFCONFIG
+          echo "CONFIG_BRIDGE=y" >> $DEFCONFIG
+          echo "CONFIG_BRIDGE_NETFILTER=y" >> $DEFCONFIG
+          echo "CONFIG_MACVLAN=y" >> $DEFCONFIG
+          echo "CONFIG_IPVLAN=y" >> $DEFCONFIG
+          echo "CONFIG_VXLAN=y" >> $DEFCONFIG
+          echo "CONFIG_BRIDGE_VLAN_FILTERING=y" >> $DEFCONFIG
+          echo "CONFIG_NETFILTER_XT_MATCH_IPVS=y" >> $DEFCONFIG
+          echo "CONFIG_IP_NF_NAT=y" >> $DEFCONFIG
+          echo "CONFIG_IP_NF_TARGET_MASQUERADE=y" >> $DEFCONFIG
+          echo "CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y" >> $DEFCONFIG
+          #IPVS - Docker Swarm/负载均衡
+          echo "CONFIG_IP_VS=y" >> $DEFCONFIG
+          echo "CONFIG_IP_VS_PROTO_TCP=y" >> $DEFCONFIG
+          echo "CONFIG_IP_VS_PROTO_UDP=y" >> $DEFCONFIG
+          echo "CONFIG_IP_VS_RR=y" >> $DEFCONFIG
+          echo "CONFIG_IP_VS_NFCT=y" >> $DEFCONFIG
+          echo "CONFIG_IP_SCTP=y" >> $DEFCONFIG
+
+          #=== nftables - 新一代包过滤框架,Docker新版本依赖 ===
+          echo "CONFIG_NF_TABLES=y" >> $DEFCONFIG
+          echo "CONFIG_NFT_NAT=y" >> $DEFCONFIG
+          echo "CONFIG_NFT_MASQ=y" >> $DEFCONFIG
+          echo "CONFIG_NFT_CT=y" >> $DEFCONFIG
+          echo "CONFIG_NFT_FIB=y" >> $DEFCONFIG
+          echo "CONFIG_NFT_FIB_IPV4=y" >> $DEFCONFIG
+          echo "CONFIG_NFT_FIB_IPV6=y" >> $DEFCONFIG
+
+          #=== 存储驱动 - Docker默认使用OverlayFS ===
+          echo "CONFIG_OVERLAY_FS=y" >> $DEFCONFIG
+          #Btrfs (可选存储驱动)
+          echo "CONFIG_BTRFS_FS=y" >> $DEFCONFIG
+          echo "CONFIG_BTRFS_FS_POSIX_ACL=y" >> $DEFCONFIG
+
+          #=== 安全模块 ===
+          echo "CONFIG_SECURITY_APPARMOR=y" >> $DEFCONFIG
+
+          #=== 其他容器运行必要特性 ===
+          echo "CONFIG_CHECKPOINT_RESTORE=y" >> $DEFCONFIG
+          echo "CONFIG_FHANDLE=y" >> $DEFCONFIG
+
       - name: 添加 BBR 等一系列拥塞控制算法
         run: |
           if [[ "${{ github.event.inputs.bbr_enable }}" != "false" ]]; then
@@ -713,6 +785,7 @@ jobs:
           echo "LZ4: ${{ github.event.inputs.lz4_enable }}" >> ./ak3.log
           echo "LZ4KD: ${{ github.event.inputs.lz4kd_enable }}" >> ./ak3.log
           echo "IPset: ${{ github.event.inputs.better_net }}" >> ./ak3.log
+          echo "Docker/LXC: ${{ github.event.inputs.docker_enable }}" >> ./ak3.log
           echo "BBR&Brutal: ${{ github.event.inputs.bbr_enable }}" >> ./ak3.log
           echo "ADIOS: ${{ github.event.inputs.adios_enable }}" >> ./ak3.log
           echo "Re-Kernel: ${{ github.event.inputs.rekernel_enable }}" >> ./ak3.log
@@ -733,6 +806,13 @@ jobs:
           path: ${{ github.workspace }}/kernel_workspace/AnyKernel*.zip
           archive: false
 
+      - name: 上传 Image 工件
+        uses: actions/upload-artifact@v7
+        with:
+          name: Image
+          path: ${{ github.workspace }}/kernel_workspace/common/out/arch/arm64/boot/Image
+          archive: false
+
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -748,6 +828,12 @@ jobs:
           name: ${{ needs.build.outputs.ak3name }}
           path: ./release_zips
           skip-decompress: true
+
+      - name: 下载 Image 工件
+        uses: actions/download-artifact@v8
+        with:
+          name: Image
+          path: ./release_zips
 
       - name: 设置环境变量
         run: |
@@ -796,6 +882,7 @@ jobs:
             - LZ4支持：${{ github.event.inputs.lz4_enable }}
             - LZ4KD支持：${{ github.event.inputs.lz4kd_enable }}
             - 网络功能增强：${{ github.event.inputs.better_net }}
+            - Docker/LXC容器支持：${{ github.event.inputs.docker_enable }}
             - BBR/Brutal 等拥塞控制算法支持：${{ github.event.inputs.bbr_enable }}
             - ADIOS IO调度器支持：${{ github.event.inputs.adios_enable }}
             - Re-Kernel支持：${{ github.event.inputs.rekernel_enable }}
@@ -818,3 +905,4 @@ jobs:
           prerelease: false
           files: |
             release_zips/AnyKernel3_*.zip
+            release_zips/Image
